@@ -25,14 +25,14 @@ void printUsage(const char* programName) {
     std::cout << "\n=== RealSense 3D Skeletal Tracking ===\n\n";
     std::cout << "Usage: " << programName << " [OPTIONS]\n\n";
     std::cout << "Options:\n";
-    std::cout << "  --model <path>      Path to TensorRT engine file (required)\n";
+    std::cout << "  --model <path>      Path to ONNX model file (required)\n";
     std::cout << "  --width <int>       Camera width (default: 1280)\n";
     std::cout << "  --height <int>      Camera height (default: 720)\n";
     std::cout << "  --fps <int>         Camera FPS (default: 30)\n";
     std::cout << "  --confidence <f>    Detection confidence threshold (default: 0.5)\n";
     std::cout << "  --help              Show this help message\n\n";
     std::cout << "Example:\n";
-    std::cout << "  " << programName << " --model models/yolov8n-pose.engine\n\n";
+    std::cout << "  " << programName << " --model models/yolov8n-pose.onnx\n\n";
 }
 
 int main(int argc, char* argv[]) {

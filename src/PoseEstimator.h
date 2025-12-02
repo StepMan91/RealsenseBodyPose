@@ -1,12 +1,10 @@
-// GPU-Accelerated Pose Estimator using TensorRT
+// GPU-Accelerated Pose Estimator using OpenCV DNN with CUDA
 
 #pragma once
 
 #include "Utils.h"
 #include <opencv2/opencv.hpp>
-#include <NvInfer.h>
-#include <NvOnnxParser.h>
-#include <cuda_runtime_api.h>
+#include <opencv2/dnn.hpp>
 #include <memory>
 #include <vector>
 #include <string>
@@ -14,9 +12,9 @@
 namespace RealsenseBodyPose {
 
 /**
- * @brief GPU-accelerated pose estimation using TensorRT
+ * @brief GPU-accelerated pose estimation using OpenCV DNN with CUDA backend
  * 
- * Loads YOLOv8-Pose TensorRT engine and performs inference on RTX 4070
+ * Loads YOLOv8-Pose ONNX model and performs inference on RTX 4070
  */
 class PoseEstimator {
 public:
@@ -24,7 +22,7 @@ public:
      * @brief Configuration for pose estimator
      */
     struct Config {
-        std::string enginePath;         // Path to TensorRT engine file
+        std::string modelPath;          // Path to ONNX model file
         int inputWidth = 640;           // Model input width
         int inputHeight = 640;          // Model input height
         float confidenceThreshold = 0.5f;  // Minimum confidence for detection
@@ -32,7 +30,7 @@ public:
         int maxDetections = 10;         // Maximum number of people to detect
         
         Config() = default;
-        explicit Config(const std::string& path) : enginePath(path) {}
+        explicit Config(const std::string& path) : modelPath(path) {}
     };
     
     /**
@@ -42,12 +40,12 @@ public:
     explicit PoseEstimator(const Config& config);
     
     /**
-     * @brief Destructor - cleanup GPU resources
+     * @brief Destructor
      */
     ~PoseEstimator();
     
     /**
-     * @brief Initialize TensorRT engine and allocate GPU memory
+     * @brief Initialize model and GPU backend
      * @throws std::runtime_error if initialization fails
      */
     void initialize();
@@ -74,20 +72,8 @@ private:
     Config config_;
     bool initialized_;
     
-    // TensorRT objects
-    nvinfer1::IRuntime* runtime_;
-    nvinfer1::ICudaEngine* engine_;
-    nvinfer1::IExecutionContext* context_;
-    
-    // CUDA buffers
-    void* buffers_[2];  // Input and output buffers on GPU
-    cudaStream_t stream_;
-    
-    // Model metadata
-    int inputIndex_;
-    int outputIndex_;
-    size_t inputSize_;
-    size_t outputSize_;
+    // OpenCV DNN network
+    cv::dnn::Net net_;
     
     // Preprocessing parameters
     float scaleX_;
@@ -96,21 +82,16 @@ private:
     float padY_;
     
     /**
-     * @brief Load TensorRT engine from file
+     * @brief Load ONNX model
      */
-    void loadEngine();
-    
-    /**
-     * @brief Allocate GPU buffers for inference
-     */
-    void allocateBuffers();
+    void loadModel();
     
     /**
      * @brief Preprocess image for model input
      * @param image Input image
-     * @param blob Output preprocessed blob (GPU memory)
+     * @return Preprocessed blob
      */
-    void preprocess(const cv::Mat& image, float* blob);
+    cv::Mat preprocess(const cv::Mat& image);
     
     /**
      * @brief Postprocess model output to extract skeletons
@@ -119,7 +100,7 @@ private:
      * @param imageHeight Original image height
      * @return Detected skeletons with 2D keypoints
      */
-    std::vector<Skeleton> postprocess(const float* output, int imageWidth, int imageHeight);
+    std::vector<Skeleton> postprocess(const cv::Mat& output, int imageWidth, int imageHeight);
     
     /**
      * @brief Apply Non-Maximum Suppression

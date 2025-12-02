@@ -1,248 +1,237 @@
-// Pose Estimator Implementation with TensorRT
+// GPU-Accelerated Pose Estimator using OpenCV DNN with CUDA
 
 #include "PoseEstimator.h"
+#include <iostream>
 #include <fstream>
 #include <algorithm>
 #include <numeric>
+#include <cmath>
 
 namespace RealsenseBodyPose {
-
-// TensorRT logger
-class Logger : public nvinfer1::ILogger {
-    void log(Severity severity, const char* msg) noexcept override {
-        if (severity <= Severity::kWARNING) {
-            std::cout << "[TensorRT] " << msg << std::endl;
-        }
-    }
-} gLogger;
 
 PoseEstimator::PoseEstimator(const Config& config)
     : config_(config)
     , initialized_(false)
-    , runtime_(nullptr)
-    , engine_(nullptr)
-    , context_(nullptr)
-    , stream_(nullptr)
-    , inputIndex_(-1)
-    , outputIndex_(-1)
-    , inputSize_(0)
-    , outputSize_(0)
     , scaleX_(1.0f)
     , scaleY_(1.0f)
     , padX_(0.0f)
     , padY_(0.0f)
 {
-    buffers_[0] = nullptr;
-    buffers_[1] = nullptr;
 }
 
 PoseEstimator::~PoseEstimator() {
-    // Free CUDA buffers
-    if (buffers_[0]) cudaFree(buffers_[0]);
-    if (buffers_[1]) cudaFree(buffers_[1]);
-    if (stream_) cudaStreamDestroy(stream_);
-    
-    // Destroy TensorRT objects
-    if (context_) context_->destroy();
-    if (engine_) engine_->destroy();
-    if (runtime_) runtime_->destroy();
-}
-
-void PoseEstimator::loadEngine() {
-    log(LogLevel::INFO, "Loading TensorRT engine: " + config_.enginePath);
-    
-    // Read engine file
-    std::ifstream file(config_.enginePath, std::ios::binary);
-    if (!file.good()) {
-        throw std::runtime_error("Cannot open engine file: " + config_.enginePath);
-    }
-    
-    file.seekg(0, std::ios::end);
-    size_t size = file.tellg();
-    file.seekg(0, std::ios::beg);
-    
-    std::vector<char> engineData(size);
-    file.read(engineData.data(), size);
-    file.close();
-    
-    // Create runtime and deserialize engine
-    runtime_ = nvinfer1::createInferRuntime(gLogger);
-    if (!runtime_) {
-        throw std::runtime_error("Failed to create TensorRT runtime");
-    }
-    
-    engine_ = runtime_->deserializeCudaEngine(engineData.data(), size);
-    if (!engine_) {
-        throw std::runtime_error("Failed to deserialize CUDA engine");
-    }
-    
-    context_ = engine_->createExecutionContext();
-    if (!context_) {
-        throw std::runtime_error("Failed to create execution context");
-    }
-    
-    log(LogLevel::INFO, "✅ TensorRT engine loaded successfully");
-    log(LogLevel::INFO, "  Engine size: " + std::to_string(size / (1024.0 * 1024.0)) + " MB");
-    log(LogLevel::INFO, "  Max batch size: " + std::to_string(engine_->getMaxBatchSize()));
-}
-
-void PoseEstimator::allocateBuffers() {
-    // Get input/output binding indices
-    inputIndex_ = engine_->getBindingIndex("images");  // YOLOv8 input name
-    outputIndex_ = engine_->getBindingIndex("output0"); // YOLOv8 output name
-    
-    if (inputIndex_ < 0 || outputIndex_ < 0) {
-        throw std::runtime_error("Invalid binding indices");
-    }
-    
-    // Calculate buffer sizes
-    auto inputDims = engine_->getBindingDimensions(inputIndex_);
-    auto outputDims = engine_->getBindingDimensions(outputIndex_);
-    
-    // Input: [1, 3, 640, 640] - batch, channels, height, width
-    inputSize_ = 1 * 3 * config_.inputHeight * config_.inputWidth * sizeof(float);
-    
-    // Output: [1, 56, 8400] - batch, (4 bbox + 1 conf + 51 keypoints), anchors
-    // For YOLOv8-Pose: 56 = 4 (bbox) + 1 (conf) + 51 (17 keypoints * 3)
-    outputSize_ = outputDims.d[1] * outputDims.d[2] * sizeof(float);
-    
-    // Allocate GPU memory
-    cudaMalloc(&buffers_[inputIndex_], inputSize_);
-    cudaMalloc(&buffers_[outputIndex_], outputSize_);
-    cudaStreamCreate(&stream_);
-    
-    log(LogLevel::INFO, "✅ GPU buffers allocated:");
-    log(LogLevel::INFO, "  Input:  " + std::to_string(inputSize_ / (1024.0 * 1024.0)) + " MB");
-    log(LogLevel::INFO, "  Output: " + std::to_string(outputSize_ / (1024.0 * 1024.0)) + " MB");
+    // OpenCV DNN cleans up automatically
 }
 
 void PoseEstimator::initialize() {
-    try {
-        loadEngine();
-        allocateBuffers();
-        
-        // Test CUDA availability
-        int deviceCount;
-        cudaGetDeviceCount(&deviceCount);
-        if (deviceCount == 0) {
-            throw std::runtime_error("No CUDA-capable GPU found");
-        }
-        
-        cudaDeviceProp deviceProp;
-        cudaGetDeviceProperties(&deviceProp, 0);
-        
-        log(LogLevel::INFO, "✅ GPU Acceleration Enabled:");
-        log(LogLevel::INFO, "  GPU: " + std::string(deviceProp.name));
-        log(LogLevel::INFO, "  Compute Capability: " + std::to_string(deviceProp.major) + "." + 
-                           std::to_string(deviceProp.minor));
-        log(LogLevel::INFO, "  Memory: " + std::to_string(deviceProp.totalGlobalMem / (1024 * 1024)) + " MB");
-        
-        initialized_ = true;
-        log(LogLevel::INFO, "✅ Pose estimator initialized successfully");
-        
-    } catch (const std::exception& e) {
-        throw std::runtime_error("Pose estimator initialization failed: " + std::string(e.what()));
+    std::cout << "[INFO] Initializing GPU Pose Estimator..." << std::endl;
+    
+    // Load model
+    loadModel();
+    
+    // Check CUDA availability
+    if (cv::cuda::getCudaEnabledDeviceCount() > 0) {
+        cv::cuda::DeviceInfo deviceInfo;
+        std::cout << "[INFO] ✅ GPU: " << deviceInfo.name() << std::endl;
+        std::cout << "[INFO]   Compute Capability: " << deviceInfo.majorVersion() << "." 
+                  << deviceInfo.minorVersion() << std::endl;
+    } else {
+        std::cout << "[WARN] ⚠️  No CUDA device found, using CPU" << std::endl;
     }
+    
+    initialized_ = true;
+    std::cout << "[INFO] ✅ Pose Estimator initialized successfully!" << std::endl;
 }
 
-void PoseEstimator::preprocess(const cv::Mat& image, float* blob) {
-    // Letterbox resize to maintain aspect ratio
-    int imgWidth = image.cols;
-    int imgHeight = image.rows;
+void PoseEstimator::loadModel() {
+    std::cout << "[INFO] Loading ONNX model: " << config_.modelPath << std::endl;
     
-    float scale = std::min(config_.inputWidth / (float)imgWidth, 
-                          config_.inputHeight / (float)imgHeight);
+    // Check file exists
+    std::ifstream file(config_.modelPath);
+    if (!file.good()) {
+        throw std::runtime_error("Model file not found: " + config_.modelPath);
+    }
+    file.close();
     
-    int newWidth = static_cast<int>(imgWidth * scale);
-    int newHeight = static_cast<int>(imgHeight * scale);
+    // Load ONNX model
+    try {
+        net_ = cv::dnn::readNetFromONNX(config_.modelPath);
+    } catch (const cv::Exception& e) {
+        throw std::runtime_error("Failed to load ONNX model: " + std::string(e.what()));
+    }
     
-    scaleX_ = (float)imgWidth / newWidth;
-    scaleY_ = (float)imgHeight / newHeight;
-    padX_ = (config_.inputWidth - newWidth) / 2.0f;
-    padY_ = (config_.inputHeight - newHeight) / 2.0f;
+    if (net_.empty()) {
+        throw std::runtime_error("Failed to load ONNX model - network is empty");
+    }
+    
+    // Set CUDA backend if available
+    if (cv::cuda::getCudaEnabledDeviceCount() > 0) {
+        net_.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
+        net_.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA);
+        std::cout << "[INFO] ✅ Using CUDA backend for inference" << std::endl;
+    } else {
+        net_.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
+        net_.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
+        std::cout << "[WARN] Using CPU backend for inference" << std::endl;
+    }
+    
+    std::cout << "[INFO] ✅ Model loaded successfully" << std::endl;
+}
+
+std::vector<Skeleton> PoseEstimator::estimate(const cv::Mat& image) {
+    if (!initialized_) {
+        throw std::runtime_error("Pose estimator not initialized");
+    }
+    
+    if (image.empty()) {
+        return {};
+    }
+    
+    // Preprocess
+    cv::Mat blob = preprocess(image);
+    
+    // Inference
+    net_.setInput(blob);
+    cv::Mat output = net_.forward();
+    
+    // Postprocess
+    return postprocess(output, image.cols, image.rows);
+}
+
+cv::Mat PoseEstimator::preprocess(const cv::Mat& image) {
+    // Calculate letterbox resize parameters
+    float scaleW = static_cast<float>(config_.inputWidth) / image.cols;
+    float scaleH = static_cast<float>(config_.inputHeight) / image.rows;
+    float scale = std::min(scaleW, scaleH);
+    
+    int newW = static_cast<int>(image.cols * scale);
+    int newH = static_cast<int>(image.rows * scale);
+    
+    // Calculate padding
+    padX_ = (config_.inputWidth - newW) / 2.0f;
+    padY_ = (config_.inputHeight - newH) / 2.0f;
+    
+    // Store scale for postprocessing
+    scaleX_ = scale;
+    scaleY_ = scale;
     
     // Resize image
     cv::Mat resized;
-    cv::resize(image, resized, cv::Size(newWidth, newHeight));
+    cv::resize(image, resized, cv::Size(newW, newH));
     
-    // Create padded image (letterbox)
+    // Create padded image
     cv::Mat padded = cv::Mat::zeros(config_.inputHeight, config_.inputWidth, CV_8UC3);
-    resized.copyTo(padded(cv::Rect(padX_, padY_, newWidth, newHeight)));
+    resized.copyTo(padded(cv::Rect(static_cast<int>(padX_), static_cast<int>(padY_), newW, newH)));
     
-    // Convert BGR to RGB and normalize to [0, 1]
-    cv::Mat rgb;
-    cv::cvtColor(padded, rgb, cv::COLOR_BGR2RGB);
-    rgb.convertTo(rgb, CV_32FC3, 1.0 / 255.0);
+    // Convert to blob (CHW format, RGB, normalized to [0,1])
+    cv::Mat blob = cv::dnn::blobFromImage(padded, 1.0/255.0, cv::Size(config_.inputWidth, config_.inputHeight),
+                                          cv::Scalar(0,0,0), true, false);
     
-    // Convert HWC to CHW format (channels first) and copy to blob
-    std::vector<cv::Mat> channels(3);
-    cv::split(rgb, channels);
-    
-    int channelSize = config_.inputWidth * config_.inputHeight;
-    for (int c = 0; c < 3; ++c) {
-        memcpy(blob + c * channelSize, channels[c].data, channelSize * sizeof(float));
-    }
+    return blob;
 }
 
-std::vector<Skeleton> PoseEstimator::postprocess(const float* output, int imageWidth, int imageHeight) {
+std::vector<Skeleton> PoseEstimator::postprocess(const cv::Mat& output, int imageWidth, int imageHeight) {
     std::vector<Skeleton> skeletons;
     
-    // YOLOv8-Pose output format: [56, 8400]
-    // 56 = 4 (bbox) + 1 (conf) + 51 (17 keypoints * 3: x, y, visibility)
-    const int numAnchors = 8400;
-    const int numElements = 56;
+    // YOLOv8-Pose output shape: [1, 56, 8400]
+    // Channels: [x, y, w, h, confidence, {17 keypoints * 3}]
+    // Each keypoint: [x, y, confidence]
+    
+    const float* data = (float*)output.data;
+    int numAnchors = output.size[2];  // 8400
+    int numChannels = output.size[1]; // 56
     
     for (int i = 0; i < numAnchors; i++) {
-        float confidence = output[4 * numAnchors + i];
+        // Get bbox confidence (index 4)
+        float confidence = data[4 * numAnchors + i];
         
         if (confidence < config_.confidenceThreshold) {
             continue;
         }
         
-        // Parse bounding box (cx, cy, w, h)
-        float cx = output[0 * numAnchors + i];
-        float cy = output[1 * numAnchors + i];
-        float w = output[2 * numAnchors + i];
-        float h = output[3 * numAnchors + i];
+        // Extract bounding box (indices 0-3)
+        float cx = data[0 * numAnchors + i];  // center x
+        float cy = data[1 * numAnchors + i];  // center y
+        float w = data[2 * numAnchors + i];   // width
+        float h = data[3 * numAnchors + i];   // height
         
-        // Convert to (x1, y1, x2, y2) and scale back to original image
-        float x1 = (cx - w / 2 - padX_) * scaleX_;
-        float y1 = (cy - h / 2 - padY_) * scaleY_;
-        float x2 = (cx + w / 2 - padX_) * scaleX_;
-        float y2 = (cy + h / 2 - padY_) * scaleY_;
+        // Scale back to original image coordinates (undo letterbox)
+        cx = (cx - padX_) / scaleX_;
+        cy = (cy - padY_) / scaleY_;
+        w = w / scaleX_;
+        h = h / scaleY_;
         
-        // Clamp to image bounds
-        x1 = std::max(0.0f, std::min(x1, (float)imageWidth));
-        y1 = std::max(0.0f, std::min(y1, (float)imageHeight));
-        x2 = std::max(0.0f, std::min(x2, (float)imageWidth));
-        y2 = std::max(0.0f, std::min(y2, (float)imageHeight));
+        float x1 = cx - w / 2;
+        float y1 = cy - h / 2;
         
-        // Create skeleton
+        // Extract 17 keypoints
         Skeleton skeleton;
+        skeleton.overallConfidence = confidence;
         skeleton.bbox[0] = x1;
         skeleton.bbox[1] = y1;
-        skeleton.bbox[2] = x2 - x1;
-        skeleton.bbox[3] = y2 - y1;
-        skeleton.overallConfidence = confidence;
+        skeleton.bbox[2] = w;
+        skeleton.bbox[3] = h;
         
-        // Parse 17 keypoints
-        for (int j = 0; j < 17; j++) {
-            float kptX = output[(5 + j * 3) * numAnchors + i];
-            float kptY = output[(6 + j * 3) * numAnchors + i];
-            float kptConf = output[(7 + j * 3) * numAnchors + i];
+        for (int k = 0; k < 17; k++) {
+            int baseIdx = 5 + k * 3;  // Start after bbox + confidence
+            float kx = data[(baseIdx + 0) * numAnchors + i];
+            float ky = data[(baseIdx + 1) * numAnchors + i];
+            float kconf = data[(baseIdx + 2) * numAnchors + i];
             
-            // Scale back to original image coordinates
-            kptX = (kptX - padX_) * scaleX_;
-            kptY = (kptY - padY_) * scaleY_;
+            // Scale back to original coordinates
+            kx = (kx - padX_) / scaleX_;
+            ky = (ky - padY_) / scaleY_;
             
-            skeleton.keypoints2D[j] = Keypoint2D(kptX, kptY, kptConf);
+            skeleton.keypoints2D[k] = Keypoint2D(kx, ky, kconf);
         }
         
         skeletons.push_back(skeleton);
     }
     
-    // Apply Non-Maximum Suppression
+    // Apply NMS
     return applyNMS(skeletons);
+}
+
+std::vector<Skeleton> PoseEstimator::applyNMS(const std::vector<Skeleton>& skeletons) {
+    if (skeletons.empty()) {
+        return {};
+    }
+    
+    std::vector<Skeleton> result;
+    std::vector<int> indices(skeletons.size());
+    std::iota(indices.begin(), indices.end(), 0);
+    
+    // Sort by confidence (descending)
+    std::sort(indices.begin(), indices.end(), [&skeletons](int a, int b) {
+        return skeletons[a].overallConfidence > skeletons[b].overallConfidence;
+    });
+    
+    std::vector<bool> suppressed(skeletons.size(), false);
+    
+    for (size_t i = 0; i < indices.size(); i++) {
+        if (suppressed[i]) continue;
+        
+        int idx = indices[i];
+        result.push_back(skeletons[idx]);
+        
+        if (result.size() >= static_cast<size_t>(config_.maxDetections)) {
+            break;
+        }
+        
+        // Suppress overlapping boxes
+        for (size_t j = i + 1; j < indices.size(); j++) {
+            if (suppressed[j]) continue;
+            
+            int jdx = indices[j];
+            float iou = calculateIoU(skeletons[idx].bbox, skeletons[jdx].bbox);
+            
+            if (iou > config_.nmsThreshold) {
+                suppressed[j] = true;
+            }
+        }
+    }
+    
+    return result;
 }
 
 float PoseEstimator::calculateIoU(const float* box1, const float* box2) {
@@ -256,74 +245,7 @@ float PoseEstimator::calculateIoU(const float* box1, const float* box2) {
     float area2 = box2[2] * box2[3];
     float unionArea = area1 + area2 - intersection;
     
-    return intersection / unionArea;
-}
-
-std::vector<Skeleton> PoseEstimator::applyNMS(const std::vector<Skeleton>& skeletons) {
-    if (skeletons.empty()) return {};
-    
-    // Sort by confidence (descending)
-    std::vector<size_t> indices(skeletons.size());
-    std::iota(indices.begin(), indices.end(), 0);
-    std::sort(indices.begin(), indices.end(), [&](size_t a, size_t b) {
-        return skeletons[a].overallConfidence > skeletons[b].overallConfidence;
-    });
-    
-    std::vector<bool> suppressed(skeletons.size(), false);
-    std::vector<Skeleton> result;
-    
-    for (size_t i = 0; i < indices.size(); i++) {
-        size_t idx = indices[i];
-        if (suppressed[idx]) continue;
-        
-        result.push_back(skeletons[idx]);
-        
-        if (result.size() >= config_.maxDetections) break;
-        
-        for (size_t j = i + 1; j < indices.size(); j++) {
-            size_t idx2 = indices[j];
-            if (suppressed[idx2]) continue;
-            
-            float iou = calculateIoU(skeletons[idx].bbox, skeletons[idx2].bbox);
-            if (iou > config_.nmsThreshold) {
-                suppressed[idx2] = true;
-            }
-        }
-    }
-    
-    return result;
-}
-
-std::vector<Skeleton> PoseEstimator::estimate(const cv::Mat& image) {
-    if (!initialized_) {
-        throw std::runtime_error("Pose estimator not initialized");
-    }
-    
-    // Allocate host memory for input
-    std::vector<float> inputBlob(config_.inputWidth * config_.inputHeight * 3);
-    
-    // Preprocess image
-    preprocess(image, inputBlob.data());
-    
-    // Copy input to GPU
-    cudaMemcpyAsync(buffers_[inputIndex_], inputBlob.data(), inputSize_, 
-                    cudaMemcpyHostToDevice, stream_);
-    
-    // Run inference
-    context_->enqueueV2(buffers_, stream_, nullptr);
-    
-    // Allocate host memory for output
-    std::vector<float> outputBlob(outputSize_ / sizeof(float));
-    
-    // Copy output from GPU
-    cudaMemcpyAsync(outputBlob.data(), buffers_[outputIndex_], outputSize_,
-                    cudaMemcpyDeviceToHost, stream_);
-    
-    // Synchronize stream
-    cudaStreamSynchronize(stream_);
-    
-    // Postprocess to get skeletons
-    return postprocess(outputBlob.data(), image.cols, image.rows);
+    return (unionArea > 0) ? (intersection / unionArea) : 0.0f;
 }
 
 } // namespace RealsenseBodyPose
