@@ -42,10 +42,10 @@ int main(int argc, char* argv[]) {
     
     // Parse command-line arguments
     std::string modelPath;
-    int cameraWidth = 1280;
-    int cameraHeight = 720;
+    int cameraWidth = 640;
+    int cameraHeight = 480;
     int cameraFPS = 30;
-    float confidenceThreshold = 0.5f;
+    float confidenceThreshold = 0.3f;
     
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
