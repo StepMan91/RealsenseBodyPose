@@ -24,8 +24,17 @@ endif()
 # ============================================
 
 # 1. RealSense SDK 2.0
-find_package(realsense2 REQUIRED)
-message(STATUS "Found RealSense SDK: ${realsense2_VERSION}")
+# Manual configuration for non-standard installation
+set(realsense2_INCLUDE_DIR "C:/Users/basti/Documents/RealSense SDK 2.0/include")
+set(realsense2_LIBRARY "C:/Users/basti/Documents/RealSense SDK 2.0/lib/x64/realsense2.lib")
+
+if(EXISTS "${realsense2_INCLUDE_DIR}" AND EXISTS "${realsense2_LIBRARY}")
+    message(STATUS "Found RealSense SDK (manual)")
+    message(STATUS "  Include: ${realsense2_INCLUDE_DIR}")
+    message(STATUS "  Library: ${realsense2_LIBRARY}")
+else()
+    message(FATAL_ERROR "RealSense SDK not found at expected location")
+endif()
 
 # 2. OpenCV with CUDA support
 find_package(OpenCV REQUIRED)
@@ -79,7 +88,7 @@ message(STATUS "  ONNX Parser: ${TENSORRT_ONNX_PARSER}")
 
 include_directories(
     ${CMAKE_SOURCE_DIR}/src
-    ${realsense2_INCLUDE_DIRS}
+    ${realsense2_INCLUDE_DIR}
     ${OpenCV_INCLUDE_DIRS}
     ${CUDA_INCLUDE_DIRS}
     ${TENSORRT_INCLUDE_DIR}
@@ -132,10 +141,10 @@ target_link_libraries(${PROJECT_NAME}
 if(WIN32)
     # Copy DLLs to output directory for runtime
     # RealSense DLLs
-    if(EXISTS "${realsense2_DIR}/../../../bin/realsense2.dll")
+    if(EXISTS "C:/Users/basti/Documents/RealSense SDK 2.0/bin/x64/realsense2.dll")
         add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${realsense2_DIR}/../../../bin/realsense2.dll"
+            "C:/Users/basti/Documents/RealSense SDK 2.0/bin/x64/realsense2.dll"
             $<TARGET_FILE_DIR:${PROJECT_NAME}>
         )
     endif()

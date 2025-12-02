@@ -1,4 +1,4 @@
-# Utility header with common definitions
+// Utility header with common definitions
 
 #pragma once
 
