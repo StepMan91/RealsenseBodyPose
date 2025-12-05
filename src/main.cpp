@@ -44,7 +44,7 @@ int main(int argc, char* argv[]) {
     std::string modelPath;
     int cameraWidth = 640;
     int cameraHeight = 480;
-    int cameraFPS = 30;
+    int cameraFPS = 60;
     float confidenceThreshold = 0.3f;
     
     for (int i = 1; i < argc; i++) {
