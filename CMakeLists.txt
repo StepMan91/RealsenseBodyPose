@@ -104,6 +104,7 @@ set(SOURCES
     src/PoseEstimator.cpp
     src/SkeletonProjector.cpp
     src/Visualizer.cpp
+    src/UdpSender.cpp
 )
 
 set(HEADERS
@@ -112,6 +113,7 @@ set(HEADERS
     src/PoseEstimator.h
     src/SkeletonProjector.h
     src/Visualizer.h
+    src/UdpSender.h
 )
 
 # ============================================
