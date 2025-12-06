@@ -105,6 +105,7 @@ set(SOURCES
     src/SkeletonProjector.cpp
     src/Visualizer.cpp
     src/UdpSender.cpp
+    src/DataRecorder.cpp
 )
 
 set(HEADERS

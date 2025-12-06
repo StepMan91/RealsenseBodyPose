@@ -1,6 +1,7 @@
 #define NOMINMAX
 // Main Application - Real-Time 3D Skeletal Tracking
 
+#include "DataRecorder.h"
 #include "PoseEstimator.h"
 #include "RealSenseCamera.h"
 #include "SkeletonProjector.h"
@@ -126,6 +127,11 @@ int main(int argc, char *argv[]) {
              "⚠️ UDP Sender failed to initialize. Network features disabled.");
     }
 
+    // 6. Initialize Data Recorder
+    appLog(LogLevel::INFO, "\n[6/6] Initializing Data Recorder...");
+    DataRecorder recorder;
+    appLog(LogLevel::INFO, "✅ Data Recorder initialized");
+
     appLog(LogLevel::INFO, "\n✅✅✅ All systems ready! ✅✅✅");
     appLog(LogLevel::INFO, "Press ESC to quit\n");
 
@@ -152,11 +158,17 @@ int main(int argc, char *argv[]) {
         projector.project(skeletons, depthImage);
         // Step 3b: Send data via UDP
         udpSender.send(skeletons);
+
+        // Step 3c: Record data
+        if (recorder.isRecording()) {
+          recorder.record(skeletons);
+        }
       }
 
       // Step 4: Visualize results
       fpsCounter.tick();
       visualizer.draw(colorImage, skeletons, fpsCounter.getFPS());
+      visualizer.drawRecordingStatus(colorImage, recorder.isRecording());
 
       visualizer.print3DCoordinates(skeletons);
 
@@ -165,6 +177,15 @@ int main(int argc, char *argv[]) {
       if (visualizer.shouldQuit(key)) {
         appLog(LogLevel::INFO, "ESC pressed. Exiting...");
         break;
+      }
+
+      // Handle 'r' key for recording (key code 114 is 'r')
+      if (key == 'r' || key == 'R') {
+        if (recorder.isRecording()) {
+          recorder.stop();
+        } else {
+          recorder.start();
+        }
       }
 
       // Log performance metrics (Disabled for build stability)
