@@ -13,7 +13,7 @@ def start_server(host='127.0.0.1', port=8888):
     sock.settimeout(2.0) # 2 seconds timeout
     
     try:
-        while time.time() - start_time < 15: # Run for 15 seconds
+        while time.time() - start_time < 60: # Run for 60 seconds
             try:
                 data, addr = sock.recvfrom(65535)
                 packet_count += 1

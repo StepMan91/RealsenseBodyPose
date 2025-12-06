@@ -118,9 +118,9 @@ int main(int argc, char *argv[]) {
 
     // 5. Initialize UDP Sender (Network Bridge)
     appLog(LogLevel::INFO, "\n[5/5] Initializing Network Bridge (UDP)...");
-    UdpSender udpSender("127.0.0.1", 8888);
+    UdpSender udpSender("172.31.69.131", 8888);
     if (udpSender.initialize()) {
-      appLog(LogLevel::INFO, "✅ UDP Sender ready on 127.0.0.1:8888");
+      appLog(LogLevel::INFO, "✅ UDP Sender ready on 172.31.69.131:8888");
     } else {
       appLog(LogLevel::WARNING,
              "⚠️ UDP Sender failed to initialize. Network features disabled.");
