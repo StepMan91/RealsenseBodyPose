@@ -5,7 +5,6 @@
 #include <iostream>
 #include <sstream>
 
-
 namespace RealsenseBodyPose {
 
 DataRecorder::DataRecorder() : isRecording_(false), frameCount_(0) {
@@ -34,15 +33,22 @@ bool DataRecorder::start() {
 
   // Write CSV Header
   file_ << "Timestamp,FrameIndex,PersonID,Confidence,";
-  // 17 Keypoints * (X, Y, Z, Conf)
-  for (int i = 0; i < 17; i++) {
-    file_ << "J" << i << "_X,"
-          << "J" << i << "_Y,"
-          << "J" << i << "_Z,"
-          << "J" << i << "_Conf";
-    if (i < 16)
-      file_ << ",";
+
+  // Define names consistent with UDP update
+  const std::vector<std::string> jointNames = {
+      "Nose",         "LeftEye",       "RightEye",  "LeftEar",    "RightEar",
+      "LeftShoulder", "RightShoulder", "LeftElbow", "RightElbow", "LeftWrist",
+      "RightWrist",   "LeftHip",       "RightHip",  "LeftKnee",   "RightKnee",
+      "LeftAnkle",    "RightAnkle"};
+
+  // Standard 17 Keypoints
+  for (const auto &name : jointNames) {
+    file_ << name << "_X," << name << "_Y," << name << "_Z," << name
+          << "_Confidence,";
   }
+  // Added Pelvis
+  file_ << "Pelvis_X,Pelvis_Y,Pelvis_Z,Pelvis_Confidence";
+
   file_ << "\n";
 
   isRecording_ = true;
@@ -85,13 +91,27 @@ void DataRecorder::record(const std::vector<Skeleton> &skeletons) {
           << std::fixed << std::setprecision(4) << skel.overallConfidence
           << ",";
 
-    // Write 3D keypoints
+    // Write 3D keypoints (Standard 17)
     for (size_t k = 0; k < skel.keypoints3D.size(); k++) {
       const auto &kp = skel.keypoints3D[k];
-      file_ << kp.x << "," << kp.y << "," << kp.z << "," << kp.confidence;
-      if (k < skel.keypoints3D.size() - 1)
-        file_ << ",";
+      file_ << kp.x << "," << kp.y << "," << kp.z << "," << kp.confidence
+            << ",";
     }
+
+    // Calculate and Write Pelvis (Midpoint of Hips 11 & 12)
+    float px = 0, py = 0, pz = 0, pConf = 0;
+    if (skel.keypoints3D.size() > 12) {
+      const auto &lHip = skel.keypoints3D[11];
+      const auto &rHip = skel.keypoints3D[12];
+      if (lHip.isValid() && rHip.isValid()) {
+        px = (lHip.x + rHip.x) / 2.0f;
+        py = (lHip.y + rHip.y) / 2.0f;
+        pz = (lHip.z + rHip.z) / 2.0f;
+        pConf = (lHip.confidence + rHip.confidence) / 2.0f;
+      }
+    }
+    file_ << px << "," << py << "," << pz << "," << pConf;
+
     file_ << "\n";
   }
 
